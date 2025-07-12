@@ -20,7 +20,7 @@ async function loadLicenseData() {
     const dataPath = path.join(__dirname, 'license_analysis_detailed.json');
     const data = await fs.readFile(dataPath, 'utf8');
     licenseData = JSON.parse(data);
-    console.log('License data loaded successfully.');
+    // console.log('License data loaded successfully.');
   } catch (error) {
     console.error('Failed to load license data:', error);
   }
