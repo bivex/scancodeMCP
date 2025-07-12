@@ -1,0 +1,21 @@
+{
+  "name": "simple-mcp-tool",
+  "version": "1.0.0",
+  "description": "A simple MCP tool that prints hello",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@model-context/mcp": "github:modelcontextprotocol/typescript-sdk#main",
+    "@modelcontextprotocol/sdk": "^1.15.1",
+    "tsx": "^4.20.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
