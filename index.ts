@@ -20,7 +20,6 @@ async function loadLicenseData() {
     const dataPath = path.join(__dirname, 'license_analysis_detailed.json');
     const data = await fs.readFile(dataPath, 'utf8');
     licenseData = JSON.parse(data);
-    // console.log('License data loaded successfully.');
   } catch (error) {
     console.error('Failed to load license data:', error);
   }
@@ -44,59 +43,63 @@ server.registerTool(
     },
   },
   async ({ filePaths, linesToRead, scannedDataBasePath }) => {
-    if (!licenseData || !licenseData.problematic_licenses) {
+    if (!licenseData?.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
 
-    const effectiveLinesToRead = linesToRead || 100;
-    const effectiveScannedDataBasePath = scannedDataBasePath || "C:\\Users\\Admin\\Desktop\\LICENSE_MANAGER\\";
+    const effectiveLinesToRead = linesToRead ?? 100;
+    const effectiveScannedDataBasePath = scannedDataBasePath ?? "C:\\Users\\Admin\\Desktop\\LICENSE_MANAGER\\";
 
-    let filesToProcess: string[] = [];
-    if (filePaths && filePaths.length > 0) {
-      filesToProcess = filePaths;
-    } else {
+    if (!filePaths?.length) {
       return { content: [{ type: "text", text: "Please provide 'filePaths' to analyze." }] };
     }
 
     let overallReport = '';
 
-    for (const currentFilePath of filesToProcess) {
-      const fileContentSnippet = await readFirstNLines(currentFilePath, effectiveLinesToRead);
-      overallReport += `\n--- File Content Snippet for ${currentFilePath} ---\n${fileContentSnippet}\n`;
-
-      let pathForLookup = currentFilePath;
-      if (path.isAbsolute(currentFilePath)) {
-        // If currentFilePath is an absolute path, make it relative to the scannedDataBasePath
-        pathForLookup = path.relative(effectiveScannedDataBasePath, currentFilePath);
-      }
-      // Normalize path separators to forward slashes for comparison with JSON data
-      pathForLookup = pathForLookup.replace(/\\/g, '/');
-
-      // Find all licenses for this file
-      const found: {name: string, score: number}[] = [];
-      for (const category in licenseData.problematic_licenses) {
-        for (const item of licenseData.problematic_licenses[category]) {
-          if (item.file.toLowerCase() === pathForLookup.toLowerCase()) {
-            found.push({ name: item.name, score: item.score });
-          }
-        }
-      }
-
-      if (found.length === 0) {
-        overallReport += `No problematic licenses found for file: ${currentFilePath}\n\n`;
-      } else {
-        let report = `Legal Analysis for ${currentFilePath}:\n`;
-        for (const lic of found) {
-          report += `\n---\nLicense: ${lic.name}\nScore: ${lic.score}\n`;
-          report += await legalSummaryForLicense(lic.name);
-        }
-        overallReport += `${report}\n\n`;
-      }
+    for (const currentFilePath of filePaths) {
+      overallReport += await processFileForLicenseAnalysis(currentFilePath, effectiveLinesToRead, effectiveScannedDataBasePath);
     }
-    
     return { content: [{ type: "text", text: overallReport.trim() }] };
   }
 );
+
+// Helper for analyze_license_file
+async function processFileForLicenseAnalysis(currentFilePath: string, effectiveLinesToRead: number, effectiveScannedDataBasePath: string): Promise<string> {
+  const fileContentSnippet = await readFirstNLines(currentFilePath, effectiveLinesToRead);
+  let report = `\n--- File Content Snippet for ${currentFilePath} ---\n${fileContentSnippet}\n`;
+
+  let pathForLookup = currentFilePath;
+  if (path.isAbsolute(currentFilePath)) {
+    pathForLookup = path.relative(effectiveScannedDataBasePath, currentFilePath);
+  }
+  pathForLookup = pathForLookup.replace(/\\/g, '/');
+
+  const found: { name: string, score: number }[] = findLicensesForFile(pathForLookup);
+
+  if (found.length === 0) {
+    report += `No problematic licenses found for file: ${currentFilePath}\n\n`;
+  } else {
+    let licReport = `Legal Analysis for ${currentFilePath}:\n`;
+    for (const lic of found) {
+      licReport += `\n---\nLicense: ${lic.name}\nScore: ${lic.score}\n`;
+      licReport += await legalSummaryForLicense(lic.name);
+    }
+    report += `${licReport}\n\n`;
+  }
+  return report;
+}
+
+function findLicensesForFile(pathForLookup: string): { name: string, score: number }[] {
+  const found: { name: string, score: number }[] = [];
+  for (const category in licenseData?.problematic_licenses ?? {}) {
+    for (const item of licenseData?.problematic_licenses?.[category] ?? []) {
+      if (item.file?.toLowerCase() === pathForLookup?.toLowerCase()) {
+        found.push({ name: item.name, score: item.score });
+      }
+    }
+  }
+  return found;
+}
 
 // B. Summarize all high-risk/problematic licenses and files
 server.registerTool(
@@ -107,24 +110,29 @@ server.registerTool(
     inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools").optional() },
   },
   async ({ random_string }) => {
-    if (!licenseData || !licenseData.problematic_licenses) {
+    if (!licenseData?.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
-    const riskMap: Record<string, Set<string>> = {};
-    for (const category in licenseData.problematic_licenses) {
-      for (const item of licenseData.problematic_licenses[category]) {
-        if (!riskMap[item.name]) riskMap[item.name] = new Set();
-        riskMap[item.name].add(item.file);
-      }
-    }
+    const riskMap: Record<string, Set<string>> = buildRiskMap();
     let report = 'Summary of High-Risk/Problematic Licenses and Files:\n';
     for (const lic in riskMap) {
-      report += `\nLicense: ${lic}\nFiles: ${Array.from(riskMap[lic]).join('; ')}\n`;
+      report += `\nLicense: ${lic}\nFiles: ${Array.from(riskMap?.[lic] ?? []).join('; ')}\n`;
       report += await legalSummaryForLicense(lic, true);
     }
     return { content: [{ type: "text", text: report }] };
   }
 );
+
+function buildRiskMap(): Record<string, Set<string>> {
+  const riskMap: Record<string, Set<string>> = {};
+  for (const category in licenseData?.problematic_licenses ?? {}) {
+    for (const item of licenseData?.problematic_licenses?.[category] ?? []) {
+      if (!riskMap[item.name]) riskMap[item.name] = new Set();
+      riskMap[item.name].add(item.file);
+    }
+  }
+  return riskMap;
+}
 
 // C. Compare two licenses for compatibility/conflict
 server.registerTool(
