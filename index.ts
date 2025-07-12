@@ -13,18 +13,6 @@ const server = new McpServer({
   version: "1.0.0"
 });
 
-server.registerTool(
-  "mcp_ScancodeMCP_analyze_licenses",
-  {
-    title: "Scancode License Analysis Tool",
-    description: "Provides tools for Scancode license analysis. Use sub-commands to access license data.",
-    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
-  },
-  async ({ random_string }) => ({
-    content: [{ type: "text", text: "This is the Scancode License Analysis tool. Use sub-commands to access license data." }]
-  })
-);
-
 let licenseData: any = {};
 
 async function loadLicenseData() {
@@ -41,188 +29,207 @@ async function loadLicenseData() {
 // Load data when the server starts
 loadLicenseData();
 
+// --- LEGAL-EXPERT-GRADE TOOLS ---
+
+// A. Analyze a file's license(s) in legal detail
 server.registerTool(
-  "mcp_ScancodeMCP_list_categories",
+  "mcp_ScancodeMCP_analyze_license_file",
   {
-    title: "List Problematic License Categories",
-    description: "Lists all categories of problematic licenses (e.g., copyleft, gpl, unknown).",
+    title: "Analyze License File (Legal Breakdown)",
+    description: "Clause-by-clause legal analysis of all licenses detected in a file, including obligations, risks, and compatibility.",
+    inputSchema: {
+      filePath: z.string().describe("The path of the file to analyze.")
+    },
+  },
+  async ({ filePath }) => {
+    if (!licenseData || !licenseData.problematic_licenses) {
+      return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
+    }
+    // Find all licenses for this file
+    const found: {name: string, score: number}[] = [];
+    for (const category in licenseData.problematic_licenses) {
+      for (const item of licenseData.problematic_licenses[category]) {
+        if (item.file.toLowerCase() === filePath.toLowerCase()) {
+          found.push({ name: item.name, score: item.score });
+        }
+      }
+    }
+    if (found.length === 0) {
+      return { content: [{ type: "text", text: `No problematic licenses found for file: ${filePath}` }] };
+    }
+    // Legal breakdown for each license
+    let report = `Legal Analysis for ${filePath}:\n`;
+    for (const lic of found) {
+      report += `\n---\nLicense: ${lic.name}\nScore: ${lic.score}\n`;
+      report += await legalSummaryForLicense(lic.name);
+    }
+    return { content: [{ type: "text", text: report }] };
+  }
+);
+
+// B. Summarize all high-risk/problematic licenses and files
+server.registerTool(
+  "mcp_ScancodeMCP_summarize_license_risks",
+  {
+    title: "Summarize License Risks",
+    description: "Lists all files with high-risk/problematic licenses and provides a legal risk summary for each license type.",
     inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
   },
   async ({ random_string }) => {
     if (!licenseData || !licenseData.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
-    const categories = Object.keys(licenseData.problematic_licenses);
-    return { content: [{ type: "text", text: `Categories: ${categories.join(', ')}` }] };
+    const riskMap: Record<string, Set<string>> = {};
+    for (const category in licenseData.problematic_licenses) {
+      for (const item of licenseData.problematic_licenses[category]) {
+        if (!riskMap[item.name]) riskMap[item.name] = new Set();
+        riskMap[item.name].add(item.file);
+      }
+    }
+    let report = 'Summary of High-Risk/Problematic Licenses and Files:\n';
+    for (const lic in riskMap) {
+      report += `\nLicense: ${lic}\nFiles: ${Array.from(riskMap[lic]).join('; ')}\n`;
+      report += await legalSummaryForLicense(lic, true);
+    }
+    return { content: [{ type: "text", text: report }] };
   }
 );
 
+// C. Compare two licenses for compatibility/conflict
 server.registerTool(
-  "mcp_ScancodeMCP_list_licenses_in_category",
+  "mcp_ScancodeMCP_compare_license_compatibility",
   {
-    title: "List Problematic Licenses in Category",
-    description: "Lists all problematic licenses within a given category.",
+    title: "Compare License Compatibility",
+    description: "Legal compatibility verdict and explanation for two license types (e.g., MIT vs GPLv3).",
     inputSchema: {
-      category: z.string().describe("The category of problematic licenses (e.g., 'gpl', 'unknown').")
+      licenseA: z.string().describe("First license name (e.g., MIT, GPL-3.0)") ,
+      licenseB: z.string().describe("Second license name (e.g., Apache-2.0, GPL-2.0)")
     },
   },
-  async ({ category }) => {
-    if (!licenseData || !licenseData.problematic_licenses || !licenseData.problematic_licenses[category]) {
-      return { content: [{ type: "text", text: `Category \'${category}\' not found or no problematic licenses.` }] };
-    }
-    const licenses = licenseData.problematic_licenses[category].map((item: any) => `${item.name} (score: ${item.score})`);
-    return { content: [{ type: "text", text: `Licenses in ${category}: ${licenses.join('; ')}` }] };
+  async ({ licenseA, licenseB }) => {
+    // Use a built-in matrix for common licenses, else flag for manual review
+    return { content: [{ type: "text", text: licenseCompatibilityVerdict(licenseA, licenseB) }] };
   }
 );
 
+// D. List all high-risk files (copyleft, unknown, commercial-unfriendly)
 server.registerTool(
-  "mcp_ScancodeMCP_get_files_by_license",
+  "mcp_ScancodeMCP_list_high_risk_files",
   {
-    title: "Get Files by License Name",
-    description: "Given a license name, lists all files associated with that license in the problematic_licenses section.",
+    title: "List High-Risk Files",
+    description: "Lists all files with copyleft, unknown, or commercial-unfriendly licenses, with a legal warning for each.",
+    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
+  },
+  async ({ random_string }) => {
+    if (!licenseData || !licenseData.problematic_licenses) {
+      return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
+    }
+    const highRiskCats = ["copyleft", "unknown", "commercial_unfriendly", "gpl", "agpl"];
+    let report = 'High-Risk Files (copyleft, unknown, commercial-unfriendly):\n';
+    for (const cat of highRiskCats) {
+      if (!licenseData.problematic_licenses[cat]) continue;
+      for (const item of licenseData.problematic_licenses[cat]) {
+        report += `\nFile: ${item.file}\nLicense: ${item.name}\n`;
+        report += await legalSummaryForLicense(item.name, true);
+      }
+    }
+    return { content: [{ type: "text", text: report }] };
+  }
+);
+
+// E. Get clause-by-clause legal summary for a license
+server.registerTool(
+  "mcp_ScancodeMCP_get_license_clause_summary",
+  {
+    title: "Get License Clause Summary",
+    description: "Clause-by-clause legal summary of a license (obligations, risks, compatibility, etc).",
     inputSchema: {
-      licenseName: z.string().describe("The full name of the license to search for.")
+      licenseName: z.string().describe("The license name to summarize (e.g., MIT, GPL-3.0, unknown)")
     },
   },
   async ({ licenseName }) => {
-    if (!licenseData || !licenseData.problematic_licenses) {
-      return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
-    }
-    const files: string[] = [];
-    for (const category in licenseData.problematic_licenses) {
-      for (const item of licenseData.problematic_licenses[category]) {
-        if (item.name.toLowerCase().includes(licenseName.toLowerCase())) {
-          files.push(item.file);
-        }
-      }
-    }
-    if (files.length === 0) {
-      return { content: [{ type: "text", text: `No files found for license: ${licenseName}` }] };
-    }
-    return { content: [{ type: "text", text: `Files for ${licenseName}: ${files.join('; ')}` }] };
+    return { content: [{ type: "text", text: await legalSummaryForLicense(licenseName) }] };
   }
 );
 
-server.registerTool(
-  "mcp_ScancodeMCP_check_file_licenses",
-  {
-    title: "Check File for Problematic Licenses",
-    description: "Given a file path, lists any problematic licenses found in that specific file.",
-    inputSchema: {
-      filePath: z.string().describe("The path of the file to check.")
-    },
-  },
-  async ({ filePath }) => {
-    if (!licenseData || !licenseData.problematic_licenses) {
-      return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
-    }
-    const foundLicenses: string[] = [];
-    for (const category in licenseData.problematic_licenses) {
-      for (const item of licenseData.problematic_licenses[category]) {
-        if (item.file.toLowerCase().includes(filePath.toLowerCase())) {
-          foundLicenses.push(`${item.name} (score: ${item.score})`);
-        }
-      }
-    }
-    if (foundLicenses.length === 0) {
-      return { content: [{ type: "text", text: `No problematic licenses found for file: ${filePath}` }] };
-    }
-    return { content: [{ type: "text", text: `Problematic licenses in ${filePath}: ${foundLicenses.join('; ')}` }] };
+// --- LEGAL SUMMARY LOGIC ---
+
+async function legalSummaryForLicense(licenseName: string, short = false): Promise<string> {
+  // This is a simplified legal expert system for demo purposes
+  const name = licenseName.toLowerCase();
+  if (name.includes("mit")) {
+    return short
+      ? "MIT: Permissive, allows reuse/modification, requires attribution, disclaims warranties. Low risk."
+      : `Type: Permissive\nGrant: Broad rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies.\nObligations: Must include original copyright and license.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Compatible with most open and closed licenses.\nRisks: Minimal.\nCommercial Use: Safe.\n`;
   }
-);
-
-server.registerTool(
-  "mcp_ScancodeMCP_list_scan_issues",
-  {
-    title: "Get Scan Issues",
-    description: "Lists all files that had scan issues and the details of the issue.",
-    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
-  },
-  async ({ random_string }) => {
-    if (!licenseData || !licenseData.scan_issues || licenseData.scan_issues.length === 0) {
-      return { content: [{ type: "text", text: "No scan issues found." }] };
-    }
-    const issues = licenseData.scan_issues.map((issue: any) => `File: ${issue.file}, Type: ${issue.type}, Details: ${issue.details.join(' ')}`);
-    return { content: [{ type: "text", text: `Scan Issues: ${issues.join('; ')}` }] };
+  if (name.includes("gpl")) {
+    return short
+      ? "GPL: Copyleft, requires derivatives to be GPL, viral effect, not business-friendly for closed source."
+      : `Type: Copyleft\nGrant: Use, copy, modify, distribute.\nObligations: Derivatives must be GPL, source code disclosure required.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Incompatible with most closed/proprietary licenses.\nRisks: Viral obligations, business model conflict.\nCommercial Use: Risky for proprietary.\n`;
   }
-);
-
-server.registerTool(
-  "mcp_ScancodeMCP_get_recommendations",
-  {
-    title: "Get License Recommendations",
-    description: "Provides the overall recommendations from the license scan.",
-    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
-  },
-  async ({ random_string }) => {
-    if (!licenseData || !licenseData.recommendations || licenseData.recommendations.length === 0) {
-      return { content: [{ type: "text", text: "No license recommendations found." }] };
-    }
-    const recommendations = licenseData.recommendations.map((rec: any) => `Severity: ${rec.severity}, Category: ${rec.category}, Message: ${rec.message}, Affected Files: ${rec.affected_files}`);
-    return { content: [{ type: "text", text: `Recommendations: ${recommendations.join('; ')}` }] };
+  if (name.includes("lgpl")) {
+    return short
+      ? "LGPL: Weak copyleft, allows dynamic linking, but modifications to LGPL code must be open."
+      : `Type: Weak Copyleft\nGrant: Use, copy, modify, distribute.\nObligations: Modifications to LGPL code must be LGPL, dynamic linking allowed.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: More compatible than GPL, but still viral for modifications.\nRisks: Linking confusion.\nCommercial Use: Moderate risk.\n`;
   }
-);
-
-server.registerTool(
-  "mcp_ScancodeMCP_list_files_for_analysis",
-  {
-    title: "List Files for Analysis",
-    description: "Lists all unique files that have problematic licenses and require review.",
-    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
-  },
-  async ({ random_string }) => {
-    if (!licenseData || !licenseData.problematic_licenses) {
-      return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
-    }
-    const files = new Set<string>();
-    for (const category in licenseData.problematic_licenses) {
-      for (const item of licenseData.problematic_licenses[category]) {
-        files.add(item.file);
-      }
-    }
-    if (files.size === 0) {
-      return { content: [{ type: "text", text: "No files with problematic licenses found for analysis." }] };
-    }
-    return { content: [{ type: "text", text: `Files for Analysis: ${Array.from(files).join('; ')}` }] };
+  if (name.includes("bsd")) {
+    return short
+      ? "BSD: Permissive, minimal restrictions, requires attribution."
+      : `Type: Permissive\nGrant: Use, copy, modify, distribute.\nObligations: Attribution, sometimes no endorsement.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: High.\nRisks: Minimal.\nCommercial Use: Safe.\n`;
   }
-);
-
-server.registerTool(
-  "mcp_ScancodeMCP_generate_file_report",
-  {
-    title: "Generate File Report",
-    description: "Reads a specified file from disk and provides its content along with any associated problematic licenses. Reports if the file cannot be read.",
-    inputSchema: {
-      filePath: z.string().describe("The path of the file to generate a report for. Must be a full path.")
-    },
-  },
-  async ({ filePath }) => {
-    try {
-      const fileContent = await fs.readFile(filePath, 'utf8');
-      let report = `File Content for ${filePath}:\n---\n${fileContent}\n---\n`;
-
-      const foundLicenses: string[] = [];
-      if (licenseData && licenseData.problematic_licenses) {
-        for (const category in licenseData.problematic_licenses) {
-          for (const item of licenseData.problematic_licenses[category]) {
-            if (item.file.toLowerCase() === filePath.toLowerCase()) { // Exact match for detailed report
-              foundLicenses.push(`${item.name} (score: ${item.score})`);
-            }
-          }
-        }
-      }
-
-      if (foundLicenses.length > 0) {
-        report += `\nAssociated Problematic Licenses: ${foundLicenses.join('; ')}`; 
-      } else {
-        report += `\nNo problematic licenses associated directly with this file.`;
-      }
-      return { content: [{ type: "text", text: report }] };
-    } catch (error: any) {
-      return { content: [{ type: "text", text: `Could not read file ${filePath}: ${error.message}. Some files might not be accessible due to permissions or being outside the project context.` }] };
-    }
+  if (name.includes("apache")) {
+    return short
+      ? "Apache: Permissive, explicit patent grant, requires NOTICE file."
+      : `Type: Permissive\nGrant: Use, copy, modify, distribute.\nObligations: Attribution, NOTICE file, patent grant.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: High, but not with GPLv2.\nRisks: Patent termination.\nCommercial Use: Safe.\n`;
   }
-);
+  if (name.includes("proprietary")) {
+    return short
+      ? "Proprietary: Custom terms, usually restricts use, modification, redistribution. High legal risk."
+      : `Type: Proprietary\nGrant: Limited, as specified.\nObligations: As specified, often strict.\nWarranty: Varies.\nIndemnity: Varies.\nCompatibility: Usually incompatible with open source.\nRisks: High, custom terms.\nCommercial Use: Review required.\n`;
+  }
+  if (name.includes("unknown")) {
+    return short
+      ? "Unknown: No license detected, all rights reserved by default. Cannot use, modify, or distribute."
+      : `Type: Unknown\nGrant: None.\nObligations: Cannot use, modify, or distribute.\nWarranty: None.\nIndemnity: None.\nCompatibility: None.\nRisks: Maximum.\nCommercial Use: Forbidden.\n`;
+  }
+  if (name.includes("cc-by")) {
+    return short
+      ? "CC-BY: Attribution required, otherwise permissive."
+      : `Type: Permissive (Creative Commons)\nGrant: Use, share, adapt.\nObligations: Attribution.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Not for software.\nRisks: License scope confusion.\nCommercial Use: Allowed.\n`;
+  }
+  if (name.includes("public-domain")) {
+    return short
+      ? "Public Domain: No rights reserved, free to use."
+      : `Type: Public Domain\nGrant: Unrestricted.\nObligations: None.\nWarranty: None.\nIndemnity: None.\nCompatibility: Universal.\nRisks: None.\nCommercial Use: Safe.\n`;
+  }
+  // Fallback for custom/complex/unknown
+  return short
+    ? `Custom/Unknown: Legal review required. High risk of non-compliance or business conflict.`
+    : `Type: Custom/Unknown\nGrant: Unclear.\nObligations: Unclear.\nWarranty: Unclear.\nIndemnity: Unclear.\nCompatibility: Unclear.\nRisks: High.\nCommercial Use: Not recommended without legal review.\n`;
+}
+
+function licenseCompatibilityVerdict(licenseA: string, licenseB: string): string {
+  // Simple matrix for demo; real-world use would be more complex
+  const a = licenseA.toLowerCase();
+  const b = licenseB.toLowerCase();
+  if (a === b) return `Both are ${licenseA}. Compatible.`;
+  if ((a.includes("mit") && b.includes("gpl")) || (b.includes("mit") && a.includes("gpl"))) {
+    return "MIT and GPL: MIT code can be included in GPL projects, but the combined work must be GPL. GPL code cannot be relicensed as MIT. Compatible with restrictions.";
+  }
+  if ((a.includes("mit") && b.includes("apache")) || (b.includes("mit") && a.includes("apache"))) {
+    return "MIT and Apache: Compatible. Both are permissive, but Apache has extra patent terms.";
+  }
+  if ((a.includes("gpl") && b.includes("apache")) || (b.includes("gpl") && a.includes("apache"))) {
+    return "GPL and Apache: Apache 2.0 is compatible with GPLv3, but not with GPLv2. Check versions.";
+  }
+  if (a.includes("proprietary") || b.includes("proprietary")) {
+    return "Proprietary and open source: Usually incompatible. Legal review required.";
+  }
+  if (a.includes("unknown") || b.includes("unknown")) {
+    return "Unknown license: Cannot determine compatibility. Legal review required.";
+  }
+  return "Compatibility unknown or complex. Legal review recommended.";
+}
 
 const transport = new StdioServerTransport();
 await server.connect(transport); 
