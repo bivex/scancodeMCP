@@ -193,7 +193,7 @@ async function legalSummaryForLicense(licenseName, short = false) {
 }
 async function readFirstNLines(filePath, numLines) {
     try {
-        const fullPath = path.join(__dirname, filePath);
+        const fullPath = path.isAbsolute(filePath) ? filePath : path.join(__dirname, filePath);
         const fileContent = await fs.readFile(fullPath, 'utf8');
         const lines = fileContent.split('\n');
         return `\n${lines.slice(0, numLines).join('\n')}\n`;
