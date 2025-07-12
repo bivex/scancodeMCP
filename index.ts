@@ -14,10 +14,10 @@ const server = new McpServer({
 });
 
 server.registerTool(
-  "mcp_scancode_license_analysis",
+  "analyze_licenses",
   {
     title: "Scancode License Analysis Tool",
-    description: "Provides tools for Scancode license analysis."
+    description: "Provides tools for Scancode license analysis. Use sub-commands to access license data."
   },
   async () => ({
     content: [{ type: "text", text: "This is the Scancode License Analysis tool. Use sub-commands to access license data." }]
@@ -41,7 +41,7 @@ async function loadLicenseData() {
 loadLicenseData();
 
 server.registerTool(
-  "mcp_scancode_listProblematicLicenseCategories",
+  "list_categories",
   {
     title: "List Problematic License Categories",
     description: "Lists all categories of problematic licenses (e.g., copyleft, gpl, unknown).",
@@ -56,7 +56,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "mcp_scancode_listProblematicLicensesInCategories",
+  "list_licenses_in_category",
   {
     title: "List Problematic Licenses in Category",
     description: "Lists all problematic licenses within a given category.",
@@ -74,7 +74,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "mcp_scancode_getFilesByLicense",
+  "get_files_by_license",
   {
     title: "Get Files by License Name",
     description: "Given a license name, lists all files associated with that license in the problematic_licenses section.",
@@ -102,7 +102,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "mcp_scancode_checkFileForProblematicLicenses",
+  "check_file_licenses",
   {
     title: "Check File for Problematic Licenses",
     description: "Given a file path, lists any problematic licenses found in that specific file.",
@@ -130,7 +130,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "mcp_scancode_getScanIssues",
+  "list_scan_issues",
   {
     title: "Get Scan Issues",
     description: "Lists all files that had scan issues and the details of the issue.",
@@ -145,7 +145,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "mcp_scancode_getLicenseRecommendations",
+  "get_recommendations",
   {
     title: "Get License Recommendations",
     description: "Provides the overall recommendations from the license scan.",
@@ -156,6 +156,66 @@ server.registerTool(
     }
     const recommendations = licenseData.recommendations.map((rec: any) => `Severity: ${rec.severity}, Category: ${rec.category}, Message: ${rec.message}, Affected Files: ${rec.affected_files}`);
     return { content: [{ type: "text", text: `Recommendations: ${recommendations.join('; ')}` }] };
+  }
+);
+
+server.registerTool(
+  "list_files_for_analysis",
+  {
+    title: "List Files for Analysis",
+    description: "Lists all unique files that have problematic licenses and require review.",
+  },
+  async () => {
+    if (!licenseData || !licenseData.problematic_licenses) {
+      return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
+    }
+    const files = new Set<string>();
+    for (const category in licenseData.problematic_licenses) {
+      for (const item of licenseData.problematic_licenses[category]) {
+        files.add(item.file);
+      }
+    }
+    if (files.size === 0) {
+      return { content: [{ type: "text", text: "No files with problematic licenses found for analysis." }] };
+    }
+    return { content: [{ type: "text", text: `Files for Analysis: ${Array.from(files).join('; ')}` }] };
+  }
+);
+
+server.registerTool(
+  "generate_file_report",
+  {
+    title: "Generate File Report",
+    description: "Reads a specified file from disk and provides its content along with any associated problematic licenses. Reports if the file cannot be read.",
+    inputSchema: {
+      filePath: z.string().describe("The path of the file to generate a report for. Must be a full path.")
+    },
+  },
+  async ({ filePath }) => {
+    try {
+      const fileContent = await fs.readFile(filePath, 'utf8');
+      let report = `File Content for ${filePath}:\n---\n${fileContent}\n---\n`;
+
+      const foundLicenses: string[] = [];
+      if (licenseData && licenseData.problematic_licenses) {
+        for (const category in licenseData.problematic_licenses) {
+          for (const item of licenseData.problematic_licenses[category]) {
+            if (item.file.toLowerCase() === filePath.toLowerCase()) { // Exact match for detailed report
+              foundLicenses.push(`${item.name} (score: ${item.score})`);
+            }
+          }
+        }
+      }
+
+      if (foundLicenses.length > 0) {
+        report += `\nAssociated Problematic Licenses: ${foundLicenses.join('; ')}`; 
+      } else {
+        report += `\nNo problematic licenses associated directly with this file.`;
+      }
+      return { content: [{ type: "text", text: report }] };
+    } catch (error: any) {
+      return { content: [{ type: "text", text: `Could not read file ${filePath}: ${error.message}. Some files might not be accessible due to permissions or being outside the project context.` }] };
+    }
   }
 );
 
