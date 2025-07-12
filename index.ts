@@ -73,7 +73,7 @@ server.registerTool(
   {
     title: "Summarize License Risks",
     description: "Lists all files with high-risk/problematic licenses and provides a legal risk summary for each license type.",
-    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
+    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools").optional() },
   },
   async ({ random_string }) => {
     if (!licenseData || !licenseData.problematic_licenses) {
@@ -118,7 +118,7 @@ server.registerTool(
   {
     title: "List High-Risk Files",
     description: "Lists all files with copyleft, unknown, or commercial-unfriendly licenses, with a legal warning for each.",
-    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
+    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools").optional() },
   },
   async ({ random_string }) => {
     if (!licenseData || !licenseData.problematic_licenses) {

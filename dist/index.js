@@ -60,7 +60,7 @@ server.registerTool("mcp_ScancodeMCP_analyze_license_file", {
 server.registerTool("mcp_ScancodeMCP_summarize_license_risks", {
     title: "Summarize License Risks",
     description: "Lists all files with high-risk/problematic licenses and provides a legal risk summary for each license type.",
-    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
+    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools").optional() },
 }, async ({ random_string }) => {
     if (!licenseData || !licenseData.problematic_licenses) {
         return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
@@ -96,7 +96,7 @@ server.registerTool("mcp_ScancodeMCP_compare_license_compatibility", {
 server.registerTool("mcp_ScancodeMCP_list_high_risk_files", {
     title: "List High-Risk Files",
     description: "Lists all files with copyleft, unknown, or commercial-unfriendly licenses, with a legal warning for each.",
-    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
+    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools").optional() },
 }, async ({ random_string }) => {
     if (!licenseData || !licenseData.problematic_licenses) {
         return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
