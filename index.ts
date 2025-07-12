@@ -160,7 +160,7 @@ server.registerTool(
     inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools").optional() },
   },
   async ({ random_string }) => {
-    if (!licenseData || !licenseData.problematic_licenses) {
+    if (!licenseData?.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
     const highRiskCats = ["copyleft", "unknown", "commercial_unfriendly", "gpl", "agpl"];
@@ -196,55 +196,60 @@ server.registerTool(
 async function legalSummaryForLicense(licenseName: string, short = false): Promise<string> {
   // This is a simplified legal expert system for demo purposes
   const name = licenseName.toLowerCase();
-  if (name.includes("mit")) {
-    return short
-      ? "MIT: Permissive, allows reuse/modification, requires attribution, disclaims warranties. Low risk."
-      : `Type: Permissive\nGrant: Broad rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies.\nObligations: Must include original copyright and license.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Compatible with most open and closed licenses.\nRisks: Minimal.\nCommercial Use: Safe.\n`;
+
+  const licenseSummaries: { [key: string]: { short: string; long: string } } = {
+    "mit": {
+      short: "MIT: Permissive, allows reuse/modification, requires attribution, disclaims warranties. Low risk.",
+      long: `Type: Permissive\nGrant: Broad rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies.\nObligations: Must include original copyright and license.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Compatible with most open and closed licenses.\nRisks: Minimal.\nCommercial Use: Safe.\n`
+    },
+    "gpl": {
+      short: "GPL: Copyleft, requires derivatives to be GPL, viral effect, not business-friendly for closed source.",
+      long: `Type: Copyleft\nGrant: Use, copy, modify, distribute.\nObligations: Derivatives must be GPL, source code disclosure required.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Incompatible with most closed/proprietary licenses.\nRisks: Viral obligations, business model conflict.\nCommercial Use: Risky for proprietary.\n`
+    },
+    "lgpl": {
+      short: "LGPL: Weak copyleft, allows dynamic linking, but modifications to LGPL code must be open.",
+      long: `Type: Weak Copyleft\nGrant: Use, copy, modify, distribute.\nObligations: Modifications to LGPL code must be LGPL, dynamic linking allowed.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: More compatible than GPL, but still viral for modifications.\nRisks: Linking confusion.\nCommercial Use: Moderate risk.\n`
+    },
+    "bsd": {
+      short: "BSD: Permissive, minimal restrictions, requires attribution.",
+      long: `Type: Permissive\nGrant: Use, copy, modify, distribute.\nObligations: Attribution, sometimes no endorsement.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: High.\nRisks: Minimal.\nCommercial Use: Safe.\n`
+    },
+    "apache": {
+      short: "Apache: Permissive, explicit patent grant, requires NOTICE file.",
+      long: `Type: Permissive\nGrant: Use, copy, modify, distribute.\nObligations: Attribution, NOTICE file, patent grant.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: High, but not with GPLv2.\nRisks: Patent termination.\nCommercial Use: Safe.\n`
+    },
+    "proprietary": {
+      short: "Proprietary: Custom terms, usually restricts use, modification, redistribution. High legal risk.",
+      long: `Type: Proprietary\nGrant: Limited, as specified.\nObligations: As specified, often strict.\nWarranty: Varies.\nIndemnity: Varies.\nCompatibility: Usually incompatible with open source.\nRisks: High, custom terms.\nCommercial Use: Review required.\n`
+    },
+    "unknown": {
+      short: "Unknown: No license detected, all rights reserved by default. Cannot use, modify, or distribute.",
+      long: `Type: Unknown\nGrant: None.\nObligations: Cannot use, modify, or distribute.\nWarranty: None.\nIndemnity: None.\nCompatibility: None.\nRisks: Maximum.\nCommercial Use: Forbidden.\n`
+    },
+    "cc-by": {
+      short: "CC-BY: Attribution required, otherwise permissive.",
+      long: `Type: Permissive (Creative Commons)\nGrant: Use, share, adapt.\nObligations: Attribution.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Not for software.\nRisks: License scope confusion.\nCommercial Use: Allowed.\n`
+    },
+    "public-domain": {
+      short: "Public Domain: No rights reserved, free to use.",
+      long: `Type: Public Domain\nGrant: Unrestricted.\nObligations: None.\nWarranty: None.\nIndemnity: None.\nCompatibility: Universal.\nRisks: None.\nCommercial Use: Safe.\n`
+    },
+    "default": {
+      short: `Custom/Unknown: Legal review required. High risk of non-compliance or business conflict.`,
+      long: `Type: Custom/Unknown\nGrant: Unclear.\nObligations: Unclear.\nWarranty: Unclear.\nIndemnity: Unclear.\nCompatibility: Unclear.\nRisks: High.\nCommercial Use: Not recommended without legal review.\n`
+    }
+  };
+
+  for (const key in licenseSummaries) {
+    if (name.includes(key)) {
+      const summary = licenseSummaries[key];
+      return short ? summary.short : summary.long;
+    }
   }
-  if (name.includes("gpl")) {
-    return short
-      ? "GPL: Copyleft, requires derivatives to be GPL, viral effect, not business-friendly for closed source."
-      : `Type: Copyleft\nGrant: Use, copy, modify, distribute.\nObligations: Derivatives must be GPL, source code disclosure required.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Incompatible with most closed/proprietary licenses.\nRisks: Viral obligations, business model conflict.\nCommercial Use: Risky for proprietary.\n`;
-  }
-  if (name.includes("lgpl")) {
-    return short
-      ? "LGPL: Weak copyleft, allows dynamic linking, but modifications to LGPL code must be open."
-      : `Type: Weak Copyleft\nGrant: Use, copy, modify, distribute.\nObligations: Modifications to LGPL code must be LGPL, dynamic linking allowed.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: More compatible than GPL, but still viral for modifications.\nRisks: Linking confusion.\nCommercial Use: Moderate risk.\n`;
-  }
-  if (name.includes("bsd")) {
-    return short
-      ? "BSD: Permissive, minimal restrictions, requires attribution."
-      : `Type: Permissive\nGrant: Use, copy, modify, distribute.\nObligations: Attribution, sometimes no endorsement.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: High.\nRisks: Minimal.\nCommercial Use: Safe.\n`;
-  }
-  if (name.includes("apache")) {
-    return short
-      ? "Apache: Permissive, explicit patent grant, requires NOTICE file."
-      : `Type: Permissive\nGrant: Use, copy, modify, distribute.\nObligations: Attribution, NOTICE file, patent grant.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: High, but not with GPLv2.\nRisks: Patent termination.\nCommercial Use: Safe.\n`;
-  }
-  if (name.includes("proprietary")) {
-    return short
-      ? "Proprietary: Custom terms, usually restricts use, modification, redistribution. High legal risk."
-      : `Type: Proprietary\nGrant: Limited, as specified.\nObligations: As specified, often strict.\nWarranty: Varies.\nIndemnity: Varies.\nCompatibility: Usually incompatible with open source.\nRisks: High, custom terms.\nCommercial Use: Review required.\n`;
-  }
-  if (name.includes("unknown")) {
-    return short
-      ? "Unknown: No license detected, all rights reserved by default. Cannot use, modify, or distribute."
-      : `Type: Unknown\nGrant: None.\nObligations: Cannot use, modify, or distribute.\nWarranty: None.\nIndemnity: None.\nCompatibility: None.\nRisks: Maximum.\nCommercial Use: Forbidden.\n`;
-  }
-  if (name.includes("cc-by")) {
-    return short
-      ? "CC-BY: Attribution required, otherwise permissive."
-      : `Type: Permissive (Creative Commons)\nGrant: Use, share, adapt.\nObligations: Attribution.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Not for software.\nRisks: License scope confusion.\nCommercial Use: Allowed.\n`;
-  }
-  if (name.includes("public-domain")) {
-    return short
-      ? "Public Domain: No rights reserved, free to use."
-      : `Type: Public Domain\nGrant: Unrestricted.\nObligations: None.\nWarranty: None.\nIndemnity: None.\nCompatibility: Universal.\nRisks: None.\nCommercial Use: Safe.\n`;
-  }
-  // Fallback for custom/complex/unknown
-  return short
-    ? `Custom/Unknown: Legal review required. High risk of non-compliance or business conflict.`
-    : `Type: Custom/Unknown\nGrant: Unclear.\nObligations: Unclear.\nWarranty: Unclear.\nIndemnity: Unclear.\nCompatibility: Unclear.\nRisks: High.\nCommercial Use: Not recommended without legal review.\n`;
+
+  // Fallback for custom/complex/unknown if no match found
+  const defaultSummary = licenseSummaries["default"];
+  return short ? defaultSummary.short : defaultSummary.long;
 }
 
 async function readFirstNLines(filePath: string, numLines: number): Promise<string> {
