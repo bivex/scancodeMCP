@@ -14,12 +14,13 @@ const server = new McpServer({
 });
 
 server.registerTool(
-  "analyze_licenses",
+  "mcp_ScancodeMCP_analyze_licenses",
   {
     title: "Scancode License Analysis Tool",
-    description: "Provides tools for Scancode license analysis. Use sub-commands to access license data."
+    description: "Provides tools for Scancode license analysis. Use sub-commands to access license data.",
+    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
   },
-  async () => ({
+  async ({ random_string }) => ({
     content: [{ type: "text", text: "This is the Scancode License Analysis tool. Use sub-commands to access license data." }]
   })
 );
@@ -41,12 +42,13 @@ async function loadLicenseData() {
 loadLicenseData();
 
 server.registerTool(
-  "list_categories",
+  "mcp_ScancodeMCP_list_categories",
   {
     title: "List Problematic License Categories",
     description: "Lists all categories of problematic licenses (e.g., copyleft, gpl, unknown).",
+    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
   },
-  async () => {
+  async ({ random_string }) => {
     if (!licenseData || !licenseData.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
@@ -56,7 +58,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "list_licenses_in_category",
+  "mcp_ScancodeMCP_list_licenses_in_category",
   {
     title: "List Problematic Licenses in Category",
     description: "Lists all problematic licenses within a given category.",
@@ -74,7 +76,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "get_files_by_license",
+  "mcp_ScancodeMCP_get_files_by_license",
   {
     title: "Get Files by License Name",
     description: "Given a license name, lists all files associated with that license in the problematic_licenses section.",
@@ -102,7 +104,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "check_file_licenses",
+  "mcp_ScancodeMCP_check_file_licenses",
   {
     title: "Check File for Problematic Licenses",
     description: "Given a file path, lists any problematic licenses found in that specific file.",
@@ -130,12 +132,13 @@ server.registerTool(
 );
 
 server.registerTool(
-  "list_scan_issues",
+  "mcp_ScancodeMCP_list_scan_issues",
   {
     title: "Get Scan Issues",
     description: "Lists all files that had scan issues and the details of the issue.",
+    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
   },
-  async () => {
+  async ({ random_string }) => {
     if (!licenseData || !licenseData.scan_issues || licenseData.scan_issues.length === 0) {
       return { content: [{ type: "text", text: "No scan issues found." }] };
     }
@@ -145,12 +148,13 @@ server.registerTool(
 );
 
 server.registerTool(
-  "get_recommendations",
+  "mcp_ScancodeMCP_get_recommendations",
   {
     title: "Get License Recommendations",
     description: "Provides the overall recommendations from the license scan.",
+    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
   },
-  async () => {
+  async ({ random_string }) => {
     if (!licenseData || !licenseData.recommendations || licenseData.recommendations.length === 0) {
       return { content: [{ type: "text", text: "No license recommendations found." }] };
     }
@@ -160,12 +164,13 @@ server.registerTool(
 );
 
 server.registerTool(
-  "list_files_for_analysis",
+  "mcp_ScancodeMCP_list_files_for_analysis",
   {
     title: "List Files for Analysis",
     description: "Lists all unique files that have problematic licenses and require review.",
+    inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools") },
   },
-  async () => {
+  async ({ random_string }) => {
     if (!licenseData || !licenseData.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
@@ -183,7 +188,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "generate_file_report",
+  "mcp_ScancodeMCP_generate_file_report",
   {
     title: "Generate File Report",
     description: "Reads a specified file from disk and provides its content along with any associated problematic licenses. Reports if the file cannot be read.",
