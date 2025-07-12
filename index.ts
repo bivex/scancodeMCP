@@ -20,7 +20,6 @@ async function loadLicenseData() {
     const dataPath = path.join(__dirname, 'license_analysis_detailed.json');
     const data = await fs.readFile(dataPath, 'utf8');
     licenseData = JSON.parse(data);
-    // console.log('License data loaded successfully.');
   } catch (error) {
     console.error('Failed to load license data:', error);
   }
@@ -44,59 +43,63 @@ server.registerTool(
     },
   },
   async ({ filePaths, linesToRead, scannedDataBasePath }) => {
-    if (!licenseData || !licenseData.problematic_licenses) {
+    if (!licenseData?.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
 
-    const effectiveLinesToRead = linesToRead || 100;
-    const effectiveScannedDataBasePath = scannedDataBasePath || "C:\\Users\\Admin\\Desktop\\LICENSE_MANAGER\\";
+    const effectiveLinesToRead = linesToRead ?? 100;
+    const effectiveScannedDataBasePath = scannedDataBasePath ?? "C:\\Users\\Admin\\Desktop\\LICENSE_MANAGER\\";
 
-    let filesToProcess: string[] = [];
-    if (filePaths && filePaths.length > 0) {
-      filesToProcess = filePaths;
-    } else {
+    if (!filePaths?.length) {
       return { content: [{ type: "text", text: "Please provide 'filePaths' to analyze." }] };
     }
 
     let overallReport = '';
 
-    for (const currentFilePath of filesToProcess) {
-      const fileContentSnippet = await readFirstNLines(currentFilePath, effectiveLinesToRead);
-      overallReport += `\n--- File Content Snippet for ${currentFilePath} ---\n${fileContentSnippet}\n`;
-
-      let pathForLookup = currentFilePath;
-      if (path.isAbsolute(currentFilePath)) {
-        // If currentFilePath is an absolute path, make it relative to the scannedDataBasePath
-        pathForLookup = path.relative(effectiveScannedDataBasePath, currentFilePath);
-      }
-      // Normalize path separators to forward slashes for comparison with JSON data
-      pathForLookup = pathForLookup.replace(/\\/g, '/');
-
-      // Find all licenses for this file
-      const found: {name: string, score: number}[] = [];
-      for (const category in licenseData.problematic_licenses) {
-        for (const item of licenseData.problematic_licenses[category]) {
-          if (item.file.toLowerCase() === pathForLookup.toLowerCase()) {
-            found.push({ name: item.name, score: item.score });
-          }
-        }
-      }
-
-      if (found.length === 0) {
-        overallReport += `No problematic licenses found for file: ${currentFilePath}\n\n`;
-      } else {
-        let report = `Legal Analysis for ${currentFilePath}:\n`;
-        for (const lic of found) {
-          report += `\n---\nLicense: ${lic.name}\nScore: ${lic.score}\n`;
-          report += await legalSummaryForLicense(lic.name);
-        }
-        overallReport += `${report}\n\n`;
-      }
+    for (const currentFilePath of filePaths) {
+      overallReport += await processFileForLicenseAnalysis(currentFilePath, effectiveLinesToRead, effectiveScannedDataBasePath);
     }
-    
     return { content: [{ type: "text", text: overallReport.trim() }] };
   }
 );
+
+// Helper for analyze_license_file
+async function processFileForLicenseAnalysis(currentFilePath: string, effectiveLinesToRead: number, effectiveScannedDataBasePath: string): Promise<string> {
+  const fileContentSnippet = await readFirstNLines(currentFilePath, effectiveLinesToRead);
+  let report = `\n--- File Content Snippet for ${currentFilePath} ---\n${fileContentSnippet}\n`;
+
+  let pathForLookup = currentFilePath;
+  if (path.isAbsolute(currentFilePath)) {
+    pathForLookup = path.relative(effectiveScannedDataBasePath, currentFilePath);
+  }
+  pathForLookup = pathForLookup.replace(/\\/g, '/');
+
+  const found: { name: string, score: number }[] = findLicensesForFile(pathForLookup);
+
+  if (found.length === 0) {
+    report += `No problematic licenses found for file: ${currentFilePath}\n\n`;
+  } else {
+    let licReport = `Legal Analysis for ${currentFilePath}:\n`;
+    for (const lic of found) {
+      licReport += `\n---\nLicense: ${lic.name}\nScore: ${lic.score}\n`;
+      licReport += await legalSummaryForLicense(lic.name);
+    }
+    report += `${licReport}\n\n`;
+  }
+  return report;
+}
+
+function findLicensesForFile(pathForLookup: string): { name: string, score: number }[] {
+  const found: { name: string, score: number }[] = [];
+  for (const category in licenseData?.problematic_licenses ?? {}) {
+    for (const item of licenseData?.problematic_licenses?.[category] ?? []) {
+      if (item.file?.toLowerCase() === pathForLookup?.toLowerCase()) {
+        found.push({ name: item.name, score: item.score });
+      }
+    }
+  }
+  return found;
+}
 
 // B. Summarize all high-risk/problematic licenses and files
 server.registerTool(
@@ -107,24 +110,29 @@ server.registerTool(
     inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools").optional() },
   },
   async ({ random_string }) => {
-    if (!licenseData || !licenseData.problematic_licenses) {
+    if (!licenseData?.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
-    const riskMap: Record<string, Set<string>> = {};
-    for (const category in licenseData.problematic_licenses) {
-      for (const item of licenseData.problematic_licenses[category]) {
-        if (!riskMap[item.name]) riskMap[item.name] = new Set();
-        riskMap[item.name].add(item.file);
-      }
-    }
+    const riskMap: Record<string, Set<string>> = buildRiskMap();
     let report = 'Summary of High-Risk/Problematic Licenses and Files:\n';
     for (const lic in riskMap) {
-      report += `\nLicense: ${lic}\nFiles: ${Array.from(riskMap[lic]).join('; ')}\n`;
+      report += `\nLicense: ${lic}\nFiles: ${Array.from(riskMap?.[lic] ?? []).join('; ')}\n`;
       report += await legalSummaryForLicense(lic, true);
     }
     return { content: [{ type: "text", text: report }] };
   }
 );
+
+function buildRiskMap(): Record<string, Set<string>> {
+  const riskMap: Record<string, Set<string>> = {};
+  for (const category in licenseData?.problematic_licenses ?? {}) {
+    for (const item of licenseData?.problematic_licenses?.[category] ?? []) {
+      if (!riskMap[item.name]) riskMap[item.name] = new Set();
+      riskMap[item.name].add(item.file);
+    }
+  }
+  return riskMap;
+}
 
 // C. Compare two licenses for compatibility/conflict
 server.registerTool(
@@ -152,7 +160,7 @@ server.registerTool(
     inputSchema: { random_string: z.string().describe("Dummy parameter for no-parameter tools").optional() },
   },
   async ({ random_string }) => {
-    if (!licenseData || !licenseData.problematic_licenses) {
+    if (!licenseData?.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
     const highRiskCats = ["copyleft", "unknown", "commercial_unfriendly", "gpl", "agpl"];
@@ -188,55 +196,60 @@ server.registerTool(
 async function legalSummaryForLicense(licenseName: string, short = false): Promise<string> {
   // This is a simplified legal expert system for demo purposes
   const name = licenseName.toLowerCase();
-  if (name.includes("mit")) {
-    return short
-      ? "MIT: Permissive, allows reuse/modification, requires attribution, disclaims warranties. Low risk."
-      : `Type: Permissive\nGrant: Broad rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies.\nObligations: Must include original copyright and license.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Compatible with most open and closed licenses.\nRisks: Minimal.\nCommercial Use: Safe.\n`;
+
+  const licenseSummaries: { [key: string]: { short: string; long: string } } = {
+    "mit": {
+      short: "MIT: Permissive, allows reuse/modification, requires attribution, disclaims warranties. Low risk.",
+      long: `Type: Permissive\nGrant: Broad rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies.\nObligations: Must include original copyright and license.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Compatible with most open and closed licenses.\nRisks: Minimal.\nCommercial Use: Safe.\n`
+    },
+    "gpl": {
+      short: "GPL: Copyleft, requires derivatives to be GPL, viral effect, not business-friendly for closed source.",
+      long: `Type: Copyleft\nGrant: Use, copy, modify, distribute.\nObligations: Derivatives must be GPL, source code disclosure required.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Incompatible with most closed/proprietary licenses.\nRisks: Viral obligations, business model conflict.\nCommercial Use: Risky for proprietary.\n`
+    },
+    "lgpl": {
+      short: "LGPL: Weak copyleft, allows dynamic linking, but modifications to LGPL code must be open.",
+      long: `Type: Weak Copyleft\nGrant: Use, copy, modify, distribute.\nObligations: Modifications to LGPL code must be LGPL, dynamic linking allowed.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: More compatible than GPL, but still viral for modifications.\nRisks: Linking confusion.\nCommercial Use: Moderate risk.\n`
+    },
+    "bsd": {
+      short: "BSD: Permissive, minimal restrictions, requires attribution.",
+      long: `Type: Permissive\nGrant: Use, copy, modify, distribute.\nObligations: Attribution, sometimes no endorsement.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: High.\nRisks: Minimal.\nCommercial Use: Safe.\n`
+    },
+    "apache": {
+      short: "Apache: Permissive, explicit patent grant, requires NOTICE file.",
+      long: `Type: Permissive\nGrant: Use, copy, modify, distribute.\nObligations: Attribution, NOTICE file, patent grant.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: High, but not with GPLv2.\nRisks: Patent termination.\nCommercial Use: Safe.\n`
+    },
+    "proprietary": {
+      short: "Proprietary: Custom terms, usually restricts use, modification, redistribution. High legal risk.",
+      long: `Type: Proprietary\nGrant: Limited, as specified.\nObligations: As specified, often strict.\nWarranty: Varies.\nIndemnity: Varies.\nCompatibility: Usually incompatible with open source.\nRisks: High, custom terms.\nCommercial Use: Review required.\n`
+    },
+    "unknown": {
+      short: "Unknown: No license detected, all rights reserved by default. Cannot use, modify, or distribute.",
+      long: `Type: Unknown\nGrant: None.\nObligations: Cannot use, modify, or distribute.\nWarranty: None.\nIndemnity: None.\nCompatibility: None.\nRisks: Maximum.\nCommercial Use: Forbidden.\n`
+    },
+    "cc-by": {
+      short: "CC-BY: Attribution required, otherwise permissive.",
+      long: `Type: Permissive (Creative Commons)\nGrant: Use, share, adapt.\nObligations: Attribution.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Not for software.\nRisks: License scope confusion.\nCommercial Use: Allowed.\n`
+    },
+    "public-domain": {
+      short: "Public Domain: No rights reserved, free to use.",
+      long: `Type: Public Domain\nGrant: Unrestricted.\nObligations: None.\nWarranty: None.\nIndemnity: None.\nCompatibility: Universal.\nRisks: None.\nCommercial Use: Safe.\n`
+    },
+    "default": {
+      short: `Custom/Unknown: Legal review required. High risk of non-compliance or business conflict.`,
+      long: `Type: Custom/Unknown\nGrant: Unclear.\nObligations: Unclear.\nWarranty: Unclear.\nIndemnity: Unclear.\nCompatibility: Unclear.\nRisks: High.\nCommercial Use: Not recommended without legal review.\n`
+    }
+  };
+
+  for (const key in licenseSummaries) {
+    if (name.includes(key)) {
+      const summary = licenseSummaries[key];
+      return short ? summary.short : summary.long;
+    }
   }
-  if (name.includes("gpl")) {
-    return short
-      ? "GPL: Copyleft, requires derivatives to be GPL, viral effect, not business-friendly for closed source."
-      : `Type: Copyleft\nGrant: Use, copy, modify, distribute.\nObligations: Derivatives must be GPL, source code disclosure required.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Incompatible with most closed/proprietary licenses.\nRisks: Viral obligations, business model conflict.\nCommercial Use: Risky for proprietary.\n`;
-  }
-  if (name.includes("lgpl")) {
-    return short
-      ? "LGPL: Weak copyleft, allows dynamic linking, but modifications to LGPL code must be open."
-      : `Type: Weak Copyleft\nGrant: Use, copy, modify, distribute.\nObligations: Modifications to LGPL code must be LGPL, dynamic linking allowed.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: More compatible than GPL, but still viral for modifications.\nRisks: Linking confusion.\nCommercial Use: Moderate risk.\n`;
-  }
-  if (name.includes("bsd")) {
-    return short
-      ? "BSD: Permissive, minimal restrictions, requires attribution."
-      : `Type: Permissive\nGrant: Use, copy, modify, distribute.\nObligations: Attribution, sometimes no endorsement.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: High.\nRisks: Minimal.\nCommercial Use: Safe.\n`;
-  }
-  if (name.includes("apache")) {
-    return short
-      ? "Apache: Permissive, explicit patent grant, requires NOTICE file."
-      : `Type: Permissive\nGrant: Use, copy, modify, distribute.\nObligations: Attribution, NOTICE file, patent grant.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: High, but not with GPLv2.\nRisks: Patent termination.\nCommercial Use: Safe.\n`;
-  }
-  if (name.includes("proprietary")) {
-    return short
-      ? "Proprietary: Custom terms, usually restricts use, modification, redistribution. High legal risk."
-      : `Type: Proprietary\nGrant: Limited, as specified.\nObligations: As specified, often strict.\nWarranty: Varies.\nIndemnity: Varies.\nCompatibility: Usually incompatible with open source.\nRisks: High, custom terms.\nCommercial Use: Review required.\n`;
-  }
-  if (name.includes("unknown")) {
-    return short
-      ? "Unknown: No license detected, all rights reserved by default. Cannot use, modify, or distribute."
-      : `Type: Unknown\nGrant: None.\nObligations: Cannot use, modify, or distribute.\nWarranty: None.\nIndemnity: None.\nCompatibility: None.\nRisks: Maximum.\nCommercial Use: Forbidden.\n`;
-  }
-  if (name.includes("cc-by")) {
-    return short
-      ? "CC-BY: Attribution required, otherwise permissive."
-      : `Type: Permissive (Creative Commons)\nGrant: Use, share, adapt.\nObligations: Attribution.\nWarranty: Disclaimed.\nIndemnity: None.\nCompatibility: Not for software.\nRisks: License scope confusion.\nCommercial Use: Allowed.\n`;
-  }
-  if (name.includes("public-domain")) {
-    return short
-      ? "Public Domain: No rights reserved, free to use."
-      : `Type: Public Domain\nGrant: Unrestricted.\nObligations: None.\nWarranty: None.\nIndemnity: None.\nCompatibility: Universal.\nRisks: None.\nCommercial Use: Safe.\n`;
-  }
-  // Fallback for custom/complex/unknown
-  return short
-    ? `Custom/Unknown: Legal review required. High risk of non-compliance or business conflict.`
-    : `Type: Custom/Unknown\nGrant: Unclear.\nObligations: Unclear.\nWarranty: Unclear.\nIndemnity: Unclear.\nCompatibility: Unclear.\nRisks: High.\nCommercial Use: Not recommended without legal review.\n`;
+
+  // Fallback for custom/complex/unknown if no match found
+  const defaultSummary = licenseSummaries["default"];
+  return short ? defaultSummary.short : defaultSummary.long;
 }
 
 async function readFirstNLines(filePath: string, numLines: number): Promise<string> {
