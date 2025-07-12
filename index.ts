@@ -38,22 +38,19 @@ server.registerTool(
     title: "Analyze License File (Legal Breakdown)",
     description: "Clause-by-clause legal analysis of all licenses detected in a file, including obligations, risks, and compatibility.",
     inputSchema: {
-      filePath: z.string().describe("The path of the single file to analyze.").optional(),
-      filePaths: z.array(z.string()).describe("An array of file paths to analyze.").optional()
+      filePaths: z.array(z.string()).describe("An array of file paths to analyze. Can be a single file path for individual analysis.")
     },
   },
-  async ({ filePath, filePaths }) => {
+  async ({ filePaths }) => {
     if (!licenseData || !licenseData.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
 
     let filesToProcess: string[] = [];
-    if (filePath) {
-      filesToProcess.push(filePath);
-    } else if (filePaths && filePaths.length > 0) {
+    if (filePaths && filePaths.length > 0) {
       filesToProcess = filePaths;
     } else {
-      return { content: [{ type: "text", text: "Please provide either a 'filePath' or 'filePaths' to analyze." }] };
+      return { content: [{ type: "text", text: "Please provide 'filePaths' to analyze." }] };
     }
 
     let overallReport = '';
