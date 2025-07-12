@@ -156,4 +156,8 @@ Here are the tools provided by this server, designed to help with license compli
 | `mcp_ScancodeMCP_get_license_clause_summary` | Clause-by-clause legal summary of a license (obligations, risks, compatibility, etc).                                                                                                                               | `mcp_ScancodeMCP_get_license_clause_summary(licenseName='MIT')`                                                                                                                                                                                                                                                                     |
 
 ## License
-MIT 
+MIT
+
+## Keywords
+
+#OpenSource #LicenseCompliance #LegalTech #Scancode #MCP #ModelContextProtocol #SoftwareLicenses #LicenseAnalysis #ComplianceTool #DeveloperTools #TypeScript #NodeJS #AutomatedLegal #CodeAnalysis 
