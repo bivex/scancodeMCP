@@ -11,15 +11,24 @@ from collections import defaultdict, Counter
 from datetime import datetime
 
 class ScanCodeAnalyzer:
+    GPL_2_0 = 'gpl-2.0'
+    GPL_3_0 = 'gpl-3.0'
+    AGPL_3_0 = 'agpl-3.0'
+    GPL_2_0_PLUS = 'gpl-2.0-plus'
+    GPL_3_0_PLUS = 'gpl-3.0-plus'
+    LGPL_2_1 = 'lgpl-2.1'
+    LGPL_3_0 = 'lgpl-3.0'
+    CC_BY_SA_4_0 = 'cc-by-sa-4.0'
+
     def __init__(self, json_file):
         self.json_file = json_file
         self.data = None
         self.load_data()
         self.problematic_licenses = {
-            'gpl': ['gpl-2.0', 'gpl-3.0', 'gpl-2.0-plus', 'gpl-3.0-plus'],
-            'agpl': ['agpl-3.0', 'agpl-3.0-plus'],
-            'copyleft': ['gpl-2.0', 'gpl-3.0', 'lgpl-2.1', 'lgpl-3.0', 'agpl-3.0'],
-            'commercial_unfriendly': ['gpl-2.0', 'gpl-3.0', 'agpl-3.0', 'cc-by-sa-4.0'],
+            'gpl': [self.GPL_2_0, self.GPL_3_0, self.GPL_2_0_PLUS, self.GPL_3_0_PLUS],
+            'agpl': [self.AGPL_3_0, self.GPL_3_0_PLUS],
+            'copyleft': [self.GPL_2_0, self.GPL_3_0, self.LGPL_2_1, self.LGPL_3_0, self.AGPL_3_0],
+            'commercial_unfriendly': [self.GPL_2_0, self.GPL_3_0, self.AGPL_3_0, self.CC_BY_SA_4_0],
             'unknown': ['unknown', 'other-permissive', 'other-copyleft', 'unknown-license-reference']
         }
         self.permissive_licenses = [
@@ -97,16 +106,19 @@ class ScanCodeAnalyzer:
         for file_info in self.data['files']:
             file_path = file_info.get('path', 'Unknown')
             for lic in self.extract_licenses_from_file(file_info):
-                key = lic.get('key', 'unknown')
-                name = lic.get('name', key)
-                score = lic.get('score', 100)
-                all_licenses[key] += 1
-                license_stats[key].append({
-                    'file': file_path,
-                    'name': name,
-                    'score': score
-                })
+                self._process_license_detection(lic, file_path, license_stats, all_licenses)
         return license_stats, all_licenses
+
+    def _process_license_detection(self, lic_info, file_path, license_stats, all_licenses):
+        key = lic_info.get('key', 'unknown')
+        name = lic_info.get('name', key)
+        score = lic_info.get('score', 100)
+        all_licenses[key] += 1
+        license_stats[key].append({
+            'file': file_path,
+            'name': name,
+            'score': score
+        })
 
     def identify_problematic_licenses(self, license_stats):
         problems = {
@@ -126,16 +138,29 @@ class ScanCodeAnalyzer:
                 file_path = detection_info['file']
                 score = detection_info['score']
                 
-                # Check for problematic license types
-                for category, license_list in self.problematic_licenses.items():
-                    if any(problem_license in license_key.lower() for problem_license in license_list):
-                        problem_sets[category].add((file_path, license_key, score)) # Store as tuple for uniqueness
+                self._add_to_problem_sets(problem_sets, license_key, file_path, score)
 
-                # Check for low confidence scores (regardless of license type)
-                if score < 70:
-                    problem_sets['low_confidence'].add((file_path, license_key, score))
+        return self._convert_problem_sets_to_list(problem_sets)
 
-        # Convert sets back to lists of dictionaries
+    def _add_to_problem_sets(self, problem_sets, license_key, file_path, score):
+        # Check for problematic license types
+        for category, license_list in self.problematic_licenses.items():
+            if any(problem_license in license_key.lower() for problem_license in license_list):
+                problem_sets[category].add((file_path, license_key, score)) # Store as tuple for uniqueness
+
+        # Check for low confidence scores (regardless of license type)
+        if score < 70:
+            problem_sets['low_confidence'].add((file_path, license_key, score))
+
+    def _convert_problem_sets_to_list(self, problem_sets):
+        problems = {
+            'copyleft': [],
+            'gpl': [],
+            'agpl': [],
+            'commercial_unfriendly': [],
+            'unknown': [],
+            'low_confidence': []
+        }
         for category, item_set in problem_sets.items():
             for file_path, license_key, score in item_set:
                 problems[category].append({
@@ -145,22 +170,24 @@ class ScanCodeAnalyzer:
                 })
         return problems
 
-    def generate_report(self):
+    def _print_report_header(self):
         print("=" * 80)
         print("🔍 SCANCODE LICENSE ANALYSIS REPORT")
         print("=" * 80)
         print(f"📁 Analyzed file: {self.json_file}")
-        print(f"📅 Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("📅 Generated on: {}".format(datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
         print()
+
+    def _print_basic_statistics(self, issues):
         total_files = len(self.data.get('files', []) if self.data else [])
-        print(f"📊 BASIC STATISTICS")
+        print("📊 BASIC STATISTICS")
         print(f"   Total files scanned: {total_files}")
-        issues = self.get_files_with_issues()
         if issues:
             print(f"   Files with scan errors: {len([i for i in issues if i['type'] == 'scan_error'])}")
             print(f"   Files with low confidence licenses: {len([i for i in issues if i['type'] == 'low_confidence_license'])}")
         print()
-        license_stats, all_licenses = self.analyze_licenses()
+
+    def _print_license_summary(self, all_licenses):
         print("📋 LICENSE SUMMARY")
         print(f"   Unique licenses detected: {len(all_licenses)}")
         print(f"   Total license detections: {sum(all_licenses.values())}")
@@ -169,7 +196,8 @@ class ScanCodeAnalyzer:
         for license_key, count in all_licenses.most_common(10):
             print(f"   {license_key:30} : {count:4} files")
         print()
-        problems = self.identify_problematic_licenses(license_stats)
+
+    def _print_potential_issues(self, problems):
         print("⚠️  POTENTIAL LICENSE ISSUES")
         print("-" * 40)
         total_issues = sum(len(v) for v in problems.values())
@@ -185,6 +213,8 @@ class ScanCodeAnalyzer:
                     if len(issue_list) > 5:
                         print(f"      ... and {len(issue_list) - 5} more files")
         print()
+
+    def _print_scan_errors(self, issues):
         scan_errors = [i for i in issues if i['type'] == 'scan_error']
         if scan_errors:
             print("❌ FILES WITH SCAN ERRORS")
@@ -193,6 +223,8 @@ class ScanCodeAnalyzer:
                 print(f"   {error['file']}")
                 print(f"   Error: {error['details']}")
                 print()
+
+    def _print_recommendations(self, problems):
         print("💡 RECOMMENDATIONS")
         print("-" * 40)
         gpl_files = len(problems['gpl'])
@@ -217,6 +249,20 @@ class ScanCodeAnalyzer:
             print("      - Check original source for accurate license information")
         print("\n" + "=" * 80)
 
+    def generate_report(self):
+        self._print_report_header()
+
+        issues = self.get_files_with_issues()
+        self._print_basic_statistics(issues)
+
+        license_stats, all_licenses = self.analyze_licenses()
+        self._print_license_summary(all_licenses)
+
+        problems = self.identify_problematic_licenses(license_stats)
+        self._print_potential_issues(problems)
+        self._print_scan_errors(issues)
+        self._print_recommendations(problems)
+
     def export_detailed_report(self, output_file='license_analysis_detailed.json'):
         license_stats, all_licenses = self.analyze_licenses()
         problems = self.identify_problematic_licenses(license_stats)
@@ -236,7 +282,7 @@ class ScanCodeAnalyzer:
         }
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(detailed_report, f, indent=2, ensure_ascii=False)
-        print(f"📄 Detailed report exported to: {output_file}")
+        print("📄 Detailed report exported to: {}".format(output_file))
 
     def generate_recommendations(self, problems):
         recommendations = []
