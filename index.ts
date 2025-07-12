@@ -38,13 +38,18 @@ server.registerTool(
     title: "Analyze License File (Legal Breakdown)",
     description: "Clause-by-clause legal analysis of all licenses detected in a file, including obligations, risks, and compatibility.",
     inputSchema: {
-      filePaths: z.array(z.string()).describe("An array of file paths to analyze. Can be a single file path for individual analysis.")
+      filePaths: z.array(z.string()).describe("An array of file paths to analyze. Can be a single file path for individual analysis."),
+      linesToRead: z.number().int().min(1).optional().describe("Number of lines to read from each file (default: 100)."),
+      scannedDataBasePath: z.string().optional().describe("The base absolute path for resolving relative license paths (default: 'C:\\Users\\Admin\\Desktop\\LICENSE_MANAGER\\').")
     },
   },
-  async ({ filePaths }) => {
+  async ({ filePaths, linesToRead, scannedDataBasePath }) => {
     if (!licenseData || !licenseData.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
+
+    const effectiveLinesToRead = linesToRead || 100;
+    const effectiveScannedDataBasePath = scannedDataBasePath || "C:\\Users\\Admin\\Desktop\\LICENSE_MANAGER\\";
 
     let filesToProcess: string[] = [];
     if (filePaths && filePaths.length > 0) {
@@ -56,14 +61,22 @@ server.registerTool(
     let overallReport = '';
 
     for (const currentFilePath of filesToProcess) {
-      const fileContentSnippet = await readFirstNLines(currentFilePath, 100);
+      const fileContentSnippet = await readFirstNLines(currentFilePath, effectiveLinesToRead);
       overallReport += `\n--- File Content Snippet for ${currentFilePath} ---\n${fileContentSnippet}\n`;
+
+      let pathForLookup = currentFilePath;
+      if (path.isAbsolute(currentFilePath)) {
+        // If currentFilePath is an absolute path, make it relative to the scannedDataBasePath
+        pathForLookup = path.relative(effectiveScannedDataBasePath, currentFilePath);
+      }
+      // Normalize path separators to forward slashes for comparison with JSON data
+      pathForLookup = pathForLookup.replace(/\\/g, '/');
 
       // Find all licenses for this file
       const found: {name: string, score: number}[] = [];
       for (const category in licenseData.problematic_licenses) {
         for (const item of licenseData.problematic_licenses[category]) {
-          if (item.file.toLowerCase() === currentFilePath.toLowerCase()) {
+          if (item.file.toLowerCase() === pathForLookup.toLowerCase()) {
             found.push({ name: item.name, score: item.score });
           }
         }
