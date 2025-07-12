@@ -56,6 +56,9 @@ server.registerTool(
     let overallReport = '';
 
     for (const currentFilePath of filesToProcess) {
+      const fileContentSnippet = await readFirstNLines(currentFilePath, 100);
+      overallReport += `\n--- File Content Snippet for ${currentFilePath} ---\n${fileContentSnippet}\n`;
+
       // Find all licenses for this file
       const found: {name: string, score: number}[] = [];
       for (const category in licenseData.problematic_licenses) {
@@ -221,6 +224,16 @@ async function legalSummaryForLicense(licenseName: string, short = false): Promi
   return short
     ? `Custom/Unknown: Legal review required. High risk of non-compliance or business conflict.`
     : `Type: Custom/Unknown\nGrant: Unclear.\nObligations: Unclear.\nWarranty: Unclear.\nIndemnity: Unclear.\nCompatibility: Unclear.\nRisks: High.\nCommercial Use: Not recommended without legal review.\n`;
+}
+
+async function readFirstNLines(filePath: string, numLines: number): Promise<string> {
+  try {
+    const fileContent = await fs.readFile(filePath, 'utf8');
+    const lines = fileContent.split('\n');
+    return `\n${lines.slice(0, numLines).join('\n')}\n`;
+  } catch (error: any) {
+    return `\nError reading file ${filePath}: ${(error as Error).message}\n`;
+  }
 }
 
 function licenseCompatibilityVerdict(licenseA: string, licenseB: string): string {

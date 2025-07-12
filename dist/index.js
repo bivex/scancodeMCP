@@ -30,25 +30,23 @@ server.registerTool("mcp_ScancodeMCP_analyze_license_file", {
     title: "Analyze License File (Legal Breakdown)",
     description: "Clause-by-clause legal analysis of all licenses detected in a file, including obligations, risks, and compatibility.",
     inputSchema: {
-        filePath: z.string().describe("The path of the single file to analyze.").optional(),
-        filePaths: z.array(z.string()).describe("An array of file paths to analyze.").optional()
+        filePaths: z.array(z.string()).describe("An array of file paths to analyze. Can be a single file path for individual analysis.")
     },
-}, async ({ filePath, filePaths }) => {
+}, async ({ filePaths }) => {
     if (!licenseData || !licenseData.problematic_licenses) {
         return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
     let filesToProcess = [];
-    if (filePath) {
-        filesToProcess.push(filePath);
-    }
-    else if (filePaths && filePaths.length > 0) {
+    if (filePaths && filePaths.length > 0) {
         filesToProcess = filePaths;
     }
     else {
-        return { content: [{ type: "text", text: "Please provide either a 'filePath' or 'filePaths' to analyze." }] };
+        return { content: [{ type: "text", text: "Please provide 'filePaths' to analyze." }] };
     }
     let overallReport = '';
     for (const currentFilePath of filesToProcess) {
+        const fileContentSnippet = await readFirstNLines(currentFilePath, 100);
+        overallReport += `\n--- File Content Snippet for ${currentFilePath} ---\n${fileContentSnippet}\n`;
         // Find all licenses for this file
         const found = [];
         for (const category in licenseData.problematic_licenses) {
@@ -192,6 +190,16 @@ async function legalSummaryForLicense(licenseName, short = false) {
     return short
         ? `Custom/Unknown: Legal review required. High risk of non-compliance or business conflict.`
         : `Type: Custom/Unknown\nGrant: Unclear.\nObligations: Unclear.\nWarranty: Unclear.\nIndemnity: Unclear.\nCompatibility: Unclear.\nRisks: High.\nCommercial Use: Not recommended without legal review.\n`;
+}
+async function readFirstNLines(filePath, numLines) {
+    try {
+        const fileContent = await fs.readFile(filePath, 'utf8');
+        const lines = fileContent.split('\n');
+        return `\n${lines.slice(0, numLines).join('\n')}\n`;
+    }
+    catch (error) {
+        return `\nError reading file ${filePath}: ${error.message}\n`;
+    }
 }
 function licenseCompatibilityVerdict(licenseA, licenseB) {
     // Simple matrix for demo; real-world use would be more complex
