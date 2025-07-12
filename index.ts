@@ -38,32 +38,50 @@ server.registerTool(
     title: "Analyze License File (Legal Breakdown)",
     description: "Clause-by-clause legal analysis of all licenses detected in a file, including obligations, risks, and compatibility.",
     inputSchema: {
-      filePath: z.string().describe("The path of the file to analyze.")
+      filePath: z.string().describe("The path of the single file to analyze.").optional(),
+      filePaths: z.array(z.string()).describe("An array of file paths to analyze.").optional()
     },
   },
-  async ({ filePath }) => {
+  async ({ filePath, filePaths }) => {
     if (!licenseData || !licenseData.problematic_licenses) {
       return { content: [{ type: "text", text: "License data not loaded or no problematic licenses found." }] };
     }
-    // Find all licenses for this file
-    const found: {name: string, score: number}[] = [];
-    for (const category in licenseData.problematic_licenses) {
-      for (const item of licenseData.problematic_licenses[category]) {
-        if (item.file.toLowerCase() === filePath.toLowerCase()) {
-          found.push({ name: item.name, score: item.score });
+
+    let filesToProcess: string[] = [];
+    if (filePath) {
+      filesToProcess.push(filePath);
+    } else if (filePaths && filePaths.length > 0) {
+      filesToProcess = filePaths;
+    } else {
+      return { content: [{ type: "text", text: "Please provide either a 'filePath' or 'filePaths' to analyze." }] };
+    }
+
+    let overallReport = '';
+
+    for (const currentFilePath of filesToProcess) {
+      // Find all licenses for this file
+      const found: {name: string, score: number}[] = [];
+      for (const category in licenseData.problematic_licenses) {
+        for (const item of licenseData.problematic_licenses[category]) {
+          if (item.file.toLowerCase() === currentFilePath.toLowerCase()) {
+            found.push({ name: item.name, score: item.score });
+          }
         }
       }
+
+      if (found.length === 0) {
+        overallReport += `No problematic licenses found for file: ${currentFilePath}\n\n`;
+      } else {
+        let report = `Legal Analysis for ${currentFilePath}:\n`;
+        for (const lic of found) {
+          report += `\n---\nLicense: ${lic.name}\nScore: ${lic.score}\n`;
+          report += await legalSummaryForLicense(lic.name);
+        }
+        overallReport += `${report}\n\n`;
+      }
     }
-    if (found.length === 0) {
-      return { content: [{ type: "text", text: `No problematic licenses found for file: ${filePath}` }] };
-    }
-    // Legal breakdown for each license
-    let report = `Legal Analysis for ${filePath}:\n`;
-    for (const lic of found) {
-      report += `\n---\nLicense: ${lic.name}\nScore: ${lic.score}\n`;
-      report += await legalSummaryForLicense(lic.name);
-    }
-    return { content: [{ type: "text", text: report }] };
+    
+    return { content: [{ type: "text", text: overallReport.trim() }] };
   }
 );
 
