@@ -2,6 +2,10 @@
 
 This project provides a set of tools built with the Model Context Protocol (MCP) TypeScript SDK. These tools help you analyze software licenses, specifically using data from a Scancode-generated `license_analysis_detailed.json` file. It's designed to make license compliance easier to manage by providing quick access to critical information about problematic licenses, affected files, and scan issues.
 
+<a href="https://glama.ai/mcp/servers/@bivex/scancodeMCP">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@bivex/scancodeMCP/badge" alt="Scancode License Analysis Tool for MCP server" />
+</a>
+
 ## What is the Model Context Protocol (MCP)?
 
 MCP is a standardized way for applications (like code editors or AI agents) to communicate with external services (like this license analysis tool). Think of it as a universal language that allows different software components to understand each other and work together, especially when dealing with large codebases or complex data.
@@ -65,7 +69,7 @@ Follow these steps to set up and run your Scancode License Analysis Tool:
 
 ## Running the Tool
 
-YouYou have two main ways to run this tool:
+You have two main ways to run this tool:
 
 ### 1. For Development (using `tsx`)
 
